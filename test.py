@@ -24,6 +24,7 @@ from argparse import ArgumentParser
 import pickle
 from pathlib import Path
 from typing import cast, Iterator
+import sys
 
 import matplotlib.pyplot as plt
 
@@ -34,7 +35,11 @@ TRAIN_CONFIG = {
     "encoder_hsz": 20,
     "decoder_hsz": 20,
     "learning_rate": 7e-4,
-    "n_epochs": 100,
+    "n_epochs": 200,
+    "sched_factor": 2,
+    "sched_patience": 10,
+    "sched_rtol": 1e-4,
+    "sched_eps": 1e-8,
 }
 
 Inputs = tuple[
@@ -73,9 +78,14 @@ def print_losses(
     best_val_yet: float,
 ):
     print(
-        f"{epoch + 1:>5d} :: {train:>16e} :: {val:>16e} :: "
-        f"{test:>16e} :: {best_val_yet:>16e}"
+        f"{epoch + 1:>5d} :: {train:>16.5e} :: {val:>16.5e} :: "
+        f"{test:>16.5e} :: {best_val_yet:>16.5e}"
     )
+
+
+@optax.inject_hyperparams
+def adam(learning_rate):
+    return optax.adam(learning_rate)
 
 
 def main():
@@ -107,17 +117,26 @@ def main():
     }
 
     model = make_model(model_args)
-    optim = optax.adam(TRAIN_CONFIG["learning_rate"])
 
+    optim = adam(TRAIN_CONFIG["learning_rate"])
     state = optim.init(equinox.filter(model, equinox.is_inexact_array))
+
+    lr_monitor = MetricMonitor(
+        patience=TRAIN_CONFIG["sched_patience"],
+        rtol=TRAIN_CONFIG["sched_rtol"],
+        atol=0.0,
+    )
+
+    val_loss = evaluate(val_dl, model)
+    lr_monitor.update(val_loss)
 
     print_header()
     print_losses(
         0,
         evaluate(train_dl, model),
-        evaluate(val_dl, model),
+        val_loss,
         evaluate(test_dl, model),
-        0.0,
+        lr_monitor.best_metric,
     )
 
     for epoch in range(TRAIN_CONFIG["n_epochs"]):
@@ -130,12 +149,22 @@ def main():
                 state,
             )
 
+        val_loss = evaluate(val_dl, model)
+
+        update_lr = lr_monitor.update(val_loss)
+        if update_lr:
+            reduce_learning_rate(
+                state,
+                factor=TRAIN_CONFIG["sched_factor"],
+                eps=TRAIN_CONFIG["sched_eps"],
+            )
+
         print_losses(
             epoch + 1,
             evaluate(train_dl, model),
-            evaluate(val_dl, model),
+            val_loss,
             evaluate(test_dl, model),
-            0.0,
+            lr_monitor.best_metric,
         )
 
     x0 = torch.tensor([1.0, 1.0])
@@ -175,7 +204,7 @@ def compute_loss(model: Flumen, inputs: Inputs, y: jax.Array):
 def train_step(
     model: Flumen,
     inputs: Inputs,
-    y: jax.Array,
+    y: BatchedOutput,
     optimiser: optax.GradientTransformation,
     state: optax.OptState,
 ) -> tuple[Flumen, optax.OptState, jax.Array]:
@@ -200,6 +229,59 @@ def make_model(args: dict[str, int]) -> Flumen:
     )
 
     return model
+
+
+def reduce_learning_rate(state: optax.OptState, factor: float, eps: float):
+    curr_lr = state.hyperparams["learning_rate"]  # type:ignore
+    new_lr = curr_lr / factor
+
+    if curr_lr - new_lr > eps:
+        state.hyperparams["learning_rate"] = new_lr  # type: ignore
+        print(
+            f"Learning rate reduced to {state.hyperparams['learning_rate']:.2e}",  # type: ignore
+            file=sys.stderr,
+        )
+
+
+class MetricMonitor:
+    patience: int
+    atol: float
+    rtol: float
+
+    def __init__(self, patience: int, rtol: float, atol: float):
+        self._best = float("inf")
+        self._counter = 0
+        self.patience = patience
+        self.rtol = rtol
+        self.atol = atol
+        self._is_best = False
+
+    def update(self, metric: float) -> bool:
+        if self.better(metric):
+            self._best = metric
+            self._is_best = True
+            self._counter = 0
+            return False
+
+        self._is_best = False
+        self._counter += 1
+
+        if self._counter > self.patience:
+            self._counter = 0
+            return True
+
+        return False
+
+    def better(self, metric: float) -> bool:
+        return metric + self.atol < (1 - self.rtol) * self._best
+
+    @property
+    def is_best(self):
+        return self._is_best
+
+    @property
+    def best_metric(self):
+        return self._best
 
 
 if __name__ == "__main__":
