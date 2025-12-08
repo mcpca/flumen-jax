@@ -40,7 +40,10 @@ TRAIN_CONFIG = {
     "sched_patience": 10,
     "sched_rtol": 1e-4,
     "sched_eps": 1e-8,
+    "torch_seed": 3520756,
 }
+
+torch.manual_seed(seed=TRAIN_CONFIG["torch_seed"])
 
 Inputs = tuple[
     BatchedState, BatchedRNNInput, BatchedTimeIncrement, BatchLengths
