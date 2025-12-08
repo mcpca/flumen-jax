@@ -1,0 +1,36 @@
+[project]
+name = "flumen-jax"
+version = "0.1.0"
+description = "A neural network architecture for learning flows of control systems."
+readme = "README.md"
+authors = [
+    { name = "Miguel Aguiar", email = "mcpcaguiar@gmail.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "equinox>=0.11.10",
+    "flumen",
+    "jax==0.4.25",
+    "jaxlib==0.4.25",
+    "jaxtyping>=0.3.3",
+    "numpy==1.26",
+    "optax>=0.2.2",
+    "torch==2.1.2",
+]
+
+[project.optional-dependencies]
+plot = [
+    "matplotlib>=3.10.7",
+]
+
+[build-system]
+requires = ["uv_build>=0.9.15,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.uv.sources]
+flumen = { git = "https://github.com/mcpca/flumen" }
+
+[tool.pyright]
+exclude = [".venv"]
+venvPath = "."
+"venv" = ".venv"
