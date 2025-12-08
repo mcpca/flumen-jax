@@ -7,7 +7,14 @@ from jax import numpy as jnp
 import equinox
 import optax
 
-from model import Flumen
+from model import (
+    Flumen,
+    BatchedOutput,
+    BatchedState,
+    BatchedRNNInput,
+    BatchedTimeIncrement,
+    BatchLengths,
+)
 
 from flumen import TrajectoryDataset
 from flumen.utils import get_batch_inputs
@@ -16,7 +23,7 @@ from torch.utils.data import DataLoader
 from argparse import ArgumentParser
 import pickle
 from pathlib import Path
-from typing import cast
+from typing import cast, Iterator
 
 import matplotlib.pyplot as plt
 
@@ -30,10 +37,22 @@ TRAIN_CONFIG = {
     "n_epochs": 100,
 }
 
+Inputs = tuple[
+    BatchedState, BatchedRNNInput, BatchedTimeIncrement, BatchLengths
+]
 
-def torch2jax(dataloader: DataLoader):
-    for example in dataloader:
-        yield (tuple(jnp.array(v.numpy()) for v in example))
+
+def torch2jax(dataloader: DataLoader) -> Iterator[tuple[BatchedOutput, Inputs]]:
+    for y, x0, rnn_input, tau, lengths in dataloader:
+        yield (
+            jnp.array(y.numpy()),
+            (
+                jnp.array(x0.numpy()),
+                jnp.array(rnn_input.numpy()),
+                jnp.array(tau.numpy()),
+                jnp.array(lengths.numpy()),
+            ),
+        )
 
 
 def print_header():
@@ -102,9 +121,13 @@ def main():
     )
 
     for epoch in range(TRAIN_CONFIG["n_epochs"]):
-        for x0, y, rnn_input, tau, lens in torch2jax(train_dl):
+        for y, inputs in torch2jax(train_dl):
             model, state, _ = train_step(
-                model, (x0, rnn_input, tau, lens), y, optim, state
+                model,
+                inputs,
+                y,
+                optim,
+                state,
             )
 
         print_losses(
@@ -132,13 +155,10 @@ def main():
     plt.show()
 
 
-Inputs = tuple[jax.Array, jax.Array, jax.Array, jax.Array]
-
-
 def evaluate(dataloader: DataLoader, model: Flumen) -> float:
     total_loss = 0.0
-    for x0, y, rnn_input, tau, lens in torch2jax(dataloader):
-        total_loss += compute_loss(model, (x0, rnn_input, tau, lens), y).item()
+    for y, inputs in torch2jax(dataloader):
+        total_loss += compute_loss(model, inputs, y).item()
     return total_loss / len(dataloader)
 
 
