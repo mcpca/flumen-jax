@@ -188,14 +188,14 @@ def evaluate(dataloader: DataLoader, model: Flumen) -> float:
     total_loss = 0.0
     for y, inputs in torch2jax(dataloader):
         total_loss += compute_loss(model, inputs, y).item()
-    return total_loss / len(dataloader)
+    return total_loss / len(dataloader.dataset)  # type: ignore
 
 
 @equinox.filter_jit
 def compute_loss(model: Flumen, inputs: Inputs, y: jax.Array):
     x, rnn_input, tau, batch_lens = inputs
     y_pred = model(x, rnn_input, tau, batch_lens)
-    loss_val = jnp.mean(jnp.square(y - y_pred))
+    loss_val = jnp.sum(jnp.square(y - y_pred))
 
     return loss_val
 
