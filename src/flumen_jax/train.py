@@ -33,12 +33,12 @@ def evaluate(dataloader: DataLoader, model: Flumen) -> float:
 def torch2jax(dataloader: DataLoader) -> Iterator[tuple[BatchedOutput, Inputs]]:
     for y, x0, rnn_input, tau, lengths in dataloader:
         yield (
-            jnp.array(y.numpy()),
+            y.numpy(),
             (
-                jnp.array(x0.numpy()),
-                jnp.array(rnn_input.numpy()),
-                jnp.array(tau.numpy()),
-                jnp.array(lengths.numpy()),
+                x0.numpy(),
+                rnn_input.numpy(),
+                tau.numpy(),
+                lengths.numpy(),
             ),
         )
 

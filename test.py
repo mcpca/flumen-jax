@@ -175,10 +175,10 @@ def main():
     x0, rnn_input, tau, lengths = get_batch_inputs(
         x0, times, u, train_data.delta
     )
-    x0 = jnp.array(x0.numpy())
-    rnn_input = jnp.array(rnn_input.numpy())
-    tau = jnp.array(tau.numpy())
-    lengths = jnp.array(lengths.numpy())
+    x0 = x0.numpy()
+    rnn_input = rnn_input.numpy()
+    tau = tau.numpy()
+    lengths = lengths.numpy()
 
     y = model(x0, rnn_input, tau, lengths)
 
