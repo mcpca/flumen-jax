@@ -2,7 +2,7 @@ import jax
 from jax import numpy as jnp
 from jax import random as jrd
 
-from jaxtyping import Float, UInt, Array, Key
+from jaxtyping import Float, UInt, Array, PRNGKeyArray
 
 import equinox
 from equinox.nn import LSTMCell, MLP
@@ -34,7 +34,7 @@ class FlumenHead(equinox.Module):
         control_dim: int,
         feature_dim: int,
         encoder_hsz: int,
-        key: Key,
+        key: PRNGKeyArray,
     ):
         lstm_key, enc_key = jrd.split(key, 2)
 
@@ -69,7 +69,11 @@ class FlumenTail(equinox.Module):
     decoder: MLP
 
     def __init__(
-        self, feature_dim: int, output_dim: int, decoder_hsz: int, key: Key
+        self,
+        feature_dim: int,
+        output_dim: int,
+        decoder_hsz: int,
+        key: PRNGKeyArray,
     ):
         self.decoder = MLP(
             in_size=feature_dim,
@@ -97,7 +101,7 @@ class Flumen(equinox.Module):
         feature_dim: int,
         encoder_hsz: int,
         decoder_hsz: int,
-        key: Key,
+        key: PRNGKeyArray,
     ):
         hkey, tkey = jrd.split(key, 2)
 
