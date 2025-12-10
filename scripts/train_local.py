@@ -2,10 +2,11 @@ import torch
 from torch.utils.data import DataLoader
 
 from jax import random as jrd
-from jax import numpy as jnp
 
 import equinox
 import optax
+
+import yaml
 
 from flumen_jax import Flumen
 from flumen_jax.train import (
@@ -17,7 +18,6 @@ from flumen_jax.train import (
 )
 
 from flumen import TrajectoryDataset
-from flumen.utils import get_batch_inputs
 
 from argparse import ArgumentParser
 import pickle
@@ -25,8 +25,8 @@ from pathlib import Path
 import sys
 from time import time
 from typing import TypedDict
-
-import matplotlib.pyplot as plt
+import datetime
+import re
 
 
 class TrainConfig(TypedDict):
@@ -92,9 +92,31 @@ def adam(learning_rate):
     return optax.adam(learning_rate)
 
 
+def get_timestamp() -> str:
+    now = datetime.datetime.now(tz=datetime.timezone.utc)
+    ts = now.strftime("%y%m%d_%H%M")
+
+    return ts
+
+
+def prepare_model_saving(names: list[str], outdir: Path):
+    first_name = names[0]
+    timestamp = get_timestamp()
+    full_name = "_".join([timestamp] + names)
+    full_name = re.sub("[^a-zA-Z0-9_-]", "_", full_name)
+
+    model_save_dir = Path(outdir / f"{first_name}/{full_name}")
+    model_save_dir.mkdir(parents=True, exist_ok=True)
+    print(f"Writing to directory {model_save_dir}", file=sys.stderr)
+
+    return model_save_dir
+
+
 def main():
     ap = ArgumentParser()
     ap.add_argument("load_path", type=str, help="Path to trajectory dataset")
+    ap.add_argument("name", type=str, nargs="+", help="Name of the experiment.")
+    ap.add_argument("--outdir", type=str, default="./outputs")
 
     args = ap.parse_args()
     data_path = Path(args.load_path)
@@ -119,6 +141,20 @@ def main():
         "encoder_hsz": TRAIN_CONFIG["encoder_hsz"],
         "decoder_hsz": TRAIN_CONFIG["decoder_hsz"],
     }
+
+    model_metadata = {
+        "args": model_args,
+        "framework": "equinox",
+        "data_path": data_path.absolute().as_posix(),
+        "data_settings": data["settings"],
+        "data_args": data["args"],
+    }
+
+    model_save_dir = prepare_model_saving(args.name, Path(args.outdir))
+
+    # Save local copy of metadata
+    with open(model_save_dir / "metadata.yaml", "w") as f:
+        yaml.dump(model_metadata, f)
 
     model = make_model(model_args)
 
@@ -172,6 +208,9 @@ def main():
             early_stop.best_metric,
         )
 
+        if early_stop.best_metric:
+            equinox.tree_serialise_leaves(model_save_dir / "leaves.eqx", model)
+
         if stop:
             print("Early stop.", file=sys.stderr)
             break
@@ -183,24 +222,8 @@ def main():
                 factor=TRAIN_CONFIG["sched_factor"],
                 eps=TRAIN_CONFIG["sched_eps"],
             )
-    train_time = time() - train_time
+    train_time = int(time() - train_time)
     print(f"Training took {train_time} sec.")
-
-    x0 = torch.tensor([1.0, 1.0])
-    u = torch.randn((31, 1))
-    times = torch.linspace(0.0, 15.0, 100).unsqueeze(-1)
-    x0, rnn_input, tau, lengths = get_batch_inputs(
-        x0, times, u, train_data.delta
-    )
-    x0 = x0.numpy()
-    rnn_input = rnn_input.numpy()
-    tau = tau.numpy()
-    lengths = lengths.numpy()
-
-    y = model(x0, rnn_input, tau, lengths)
-
-    plt.plot(times.numpy(), y)
-    plt.show()
 
 
 def make_model(args: dict[str, int]) -> Flumen:
