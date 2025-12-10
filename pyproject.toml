@@ -28,8 +28,12 @@ package = true
 
 [tool.uv.sources]
 flumen = { git = "https://github.com/mcpca/flumen" }
+semble = { git = "https://github.com/mcpca/semble" }
 
 [dependency-groups]
-plot = [
+dev = [
     "matplotlib>=3.10.7",
+    "python-language-server>=0.36.2",
+    "semble",
+    "wandb>=0.23.1",
 ]
