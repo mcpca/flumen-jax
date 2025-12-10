@@ -24,11 +24,28 @@ import pickle
 from pathlib import Path
 import sys
 from time import time
+from typing import TypedDict
 
 import matplotlib.pyplot as plt
 
 
-TRAIN_CONFIG = {
+class TrainConfig(TypedDict):
+    batch_size: int
+    feature_dim: int
+    encoder_hsz: int
+    decoder_hsz: int
+    learning_rate: float
+    n_epochs: int
+    sched_factor: int
+    sched_patience: int
+    sched_rtol: float
+    sched_eps: float
+    es_patience: int
+    es_atol: float
+    torch_seed: int
+
+
+TRAIN_CONFIG: TrainConfig = {
     "batch_size": 128,
     "feature_dim": 16,
     "encoder_hsz": 20,
