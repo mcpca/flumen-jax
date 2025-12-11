@@ -49,7 +49,7 @@ TRAIN_CONFIG: TrainConfig = {
 }
 
 DEFAULT_JAX_SEED = 0
-DEFAULT_TORCH_SEED = 3520756
+DEFAULT_TORCH_KEY_SEED = 3520756
 
 
 def handle_seeds() -> tuple[PRNGKeyArray, int, int | None, int]:
@@ -70,12 +70,19 @@ def handle_seeds() -> tuple[PRNGKeyArray, int, int | None, int]:
     else:
         array_id = None
 
-    torch_seed_str = os.environ.get("FLUMEN_TORCH_SEED")
+    torch_seed_str = os.environ.get("FLUMEN_TORCH_KEY_SEED")
     if not torch_seed_str:
-        print("No PyTorch seed found, using default", file=sys.stderr)
-        torch_seed = DEFAULT_TORCH_SEED
+        print("No PyTorch key seed found, using default", file=sys.stderr)
+        torch_key_seed = DEFAULT_TORCH_KEY_SEED
     else:
-        torch_seed = int(torch_seed_str)
+        torch_key_seed = int(torch_seed_str)
+
+    torch_key = jrd.key(torch_key_seed)
+
+    if array_id and array_id > 1:
+        *_, torch_key = jrd.split(torch_key, array_id)
+
+    torch_seed = jrd.randint(torch_key, (1,), minval=0, maxval=32768).item()
 
     return model_key, model_key_seed, array_id, torch_seed
 
@@ -112,6 +119,7 @@ def main():
 
     model_key, model_key_seed, array_id, torch_seed = handle_seeds()
     wandb.config["model_key_seed"] = model_key_seed
+    wandb.config["torch_seed"] = torch_seed
     if array_id:
         wandb.config["array_id"] = array_id
 
