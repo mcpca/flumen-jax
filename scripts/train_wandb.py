@@ -210,8 +210,9 @@ def main():
             early_stop.best_metric,
         )
 
-        if early_stop.best_metric:
+        if early_stop.is_best:
             equinox.tree_serialise_leaves(model_save_dir / "leaves.eqx", model)
+
             if last_log_epoch >= epoch + args.model_log_rate:
                 run.log_model(model_save_dir.as_posix(), name=model_name)
                 last_log_epoch = epoch

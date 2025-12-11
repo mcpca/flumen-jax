@@ -31,7 +31,7 @@ from flumen_jax.utils import (
 
 TRAIN_CONFIG: TrainConfig = {
     "batch_size": 128,
-    "feature_dim": 64,
+    "feature_dim": 24,
     "encoder_hsz": 128,
     "decoder_hsz": 128,
     "learning_rate": 1e-3,
@@ -138,18 +138,19 @@ def main():
                 state,
             )
 
+        train_loss = evaluate(train_dl, model)
         val_loss = evaluate(val_dl, model)
         stop = early_stop.update(val_loss)
 
         print_losses(
             epoch + 1,
-            evaluate(train_dl, model),
+            train_loss,
             val_loss,
             evaluate(test_dl, model),
             early_stop.best_metric,
         )
 
-        if early_stop.best_metric:
+        if early_stop.is_best:
             equinox.tree_serialise_leaves(model_save_dir / "leaves.eqx", model)
 
         if stop:
