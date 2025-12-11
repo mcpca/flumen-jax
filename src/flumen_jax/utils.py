@@ -57,12 +57,16 @@ def get_timestamp() -> str:
     return ts
 
 
-def prepare_model_saving(names: list[str], outdir: Path):
+def prepare_model_saving(names: list[str]) -> tuple[str, str, str]:
     first_name = names[0]
     timestamp = get_timestamp()
     full_name = "_".join([timestamp] + names)
     full_name = re.sub("[^a-zA-Z0-9_-]", "_", full_name)
 
+    return first_name, full_name, timestamp
+
+
+def make_model_dir(outdir: Path, first_name: str, full_name: str) -> Path:
     model_save_dir = Path(outdir / f"{first_name}/{full_name}")
     model_save_dir.mkdir(parents=True, exist_ok=True)
     print(f"Writing to directory {model_save_dir}", file=sys.stderr)

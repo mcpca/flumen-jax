@@ -3,9 +3,11 @@ import sys
 from argparse import ArgumentParser
 from pathlib import Path
 from time import time
+from typing import cast
 
 import equinox
 import torch
+import wandb
 import yaml
 from flumen import TrajectoryDataset
 from torch.utils.data import DataLoader
@@ -21,15 +23,15 @@ from flumen_jax.utils import (
     TrainConfig,
     adam,
     make_model,
-    make_model_dir,
     prepare_model_saving,
+    make_model_dir,
     print_header,
     print_losses,
 )
 
 TRAIN_CONFIG: TrainConfig = {
     "batch_size": 128,
-    "feature_dim": 64,
+    "feature_dim": 24,
     "encoder_hsz": 128,
     "decoder_hsz": 128,
     "learning_rate": 1e-3,
@@ -51,6 +53,12 @@ def main():
     ap = ArgumentParser()
     ap.add_argument("load_path", type=str, help="Path to trajectory dataset")
     ap.add_argument("name", type=str, nargs="+", help="Name of the experiment.")
+    ap.add_argument(
+        "--model_log_rate",
+        type=int,
+        default=15,
+        help="Model will not be logged to W&B more often than every model_log_rate epochs.",
+    )
     ap.add_argument("--outdir", type=str, default="./outputs")
 
     args = ap.parse_args()
@@ -85,27 +93,34 @@ def main():
         "data_args": data["args"],
     }
 
-    first_name, full_name, _ = prepare_model_saving(args.name)
-    model_save_dir = make_model_dir(Path(args.outdir), first_name, full_name)
+    first_name, full_name, timestamp = prepare_model_saving(args.name)
+
+    run = wandb.init(
+        project="flumen-jax", config=cast(dict, TRAIN_CONFIG), name=full_name
+    )
+    model_save_dir = make_model_dir(
+        Path(args.outdir), first_name, full_name + run.id
+    )
+    model_name = f"flumen_jax-{timestamp}-{data_path.stem}-{run.id}"
 
     # Save local copy of metadata
     with open(model_save_dir / "metadata.yaml", "w") as f:
         yaml.dump(model_metadata, f)
 
-    model = make_model(model_args, TRAIN_CONFIG["model_key_seed"])
+    model = make_model(model_args, run.config["model_key_seed"])
 
-    optim = adam(TRAIN_CONFIG["learning_rate"])
+    optim = adam(run.config["learning_rate"])
     state = optim.init(equinox.filter(model, equinox.is_inexact_array))
 
     lr_monitor = MetricMonitor(
-        patience=TRAIN_CONFIG["sched_patience"],
-        rtol=TRAIN_CONFIG["sched_rtol"],
+        patience=run.config["sched_patience"],
+        rtol=run.config["sched_rtol"],
         atol=0.0,
     )
 
     early_stop = MetricMonitor(
-        patience=TRAIN_CONFIG["es_patience"],
-        atol=TRAIN_CONFIG["es_atol"],
+        patience=run.config["es_patience"],
+        atol=run.config["es_atol"],
         rtol=0.0,
     )
 
@@ -122,8 +137,9 @@ def main():
         early_stop.best_metric,
     )
 
+    last_log_epoch = 0
     train_time = time()
-    for epoch in range(TRAIN_CONFIG["n_epochs"]):
+    for epoch in range(run.config["n_epochs"]):
         for y, inputs in torch2jax(train_dl):
             model, state, _ = train_step(
                 model,
@@ -133,19 +149,40 @@ def main():
                 state,
             )
 
+        train_loss = evaluate(train_dl, model)
         val_loss = evaluate(val_dl, model)
+        test_loss = evaluate(test_dl, model)
         stop = early_stop.update(val_loss)
 
         print_losses(
             epoch + 1,
-            evaluate(train_dl, model),
+            train_loss,
             val_loss,
-            evaluate(test_dl, model),
+            test_loss,
             early_stop.best_metric,
         )
 
         if early_stop.best_metric:
             equinox.tree_serialise_leaves(model_save_dir / "leaves.eqx", model)
+            if last_log_epoch >= epoch + args.model_log_rate:
+                run.log_model(model_save_dir.as_posix(), name=model_name)
+                last_log_epoch = epoch
+
+            run.summary["best_train"] = train_loss
+            run.summary["best_val"] = val_loss
+            run.summary["best_test"] = test_loss
+            run.summary["best_epoch"] = epoch + 1
+
+        wandb.log(
+            {
+                "time": time() - train_time,
+                "epoch": epoch + 1,
+                "lr": state.hyperparams["learning_rate"],  # type: ignore
+                "train_loss": train_loss,
+                "val_loss": val_loss,
+                "test_loss": test_loss,
+            }
+        )
 
         if stop:
             print("Early stop.", file=sys.stderr)
@@ -155,11 +192,15 @@ def main():
         if update_lr:
             reduce_learning_rate(
                 state,
-                factor=TRAIN_CONFIG["sched_factor"],
-                eps=TRAIN_CONFIG["sched_eps"],
+                factor=run.config["sched_factor"],
+                eps=run.config["sched_eps"],
             )
+
     train_time = int(time() - train_time)
     print(f"Training took {train_time} sec.")
+
+    # Log best model
+    run.log_model(model_save_dir.as_posix(), name=model_name, aliases=["best"])
 
 
 if __name__ == "__main__":
