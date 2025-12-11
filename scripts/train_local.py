@@ -5,6 +5,8 @@ from pathlib import Path
 from time import time
 
 import equinox
+import jax
+from jax import random as jrd
 import torch
 import yaml
 from flumen import TrajectoryDataset
@@ -48,6 +50,8 @@ torch.manual_seed(seed=TRAIN_CONFIG["torch_seed"])
 
 
 def main():
+    print("JAX device list:", jax.devices(), file=sys.stderr)
+
     ap = ArgumentParser()
     ap.add_argument("load_path", type=str, help="Path to trajectory dataset")
     ap.add_argument("name", type=str, nargs="+", help="Name of the experiment.")
@@ -92,7 +96,8 @@ def main():
     with open(model_save_dir / "metadata.yaml", "w") as f:
         yaml.dump(model_metadata, f)
 
-    model = make_model(model_args, TRAIN_CONFIG["model_key_seed"])
+    key = jrd.key(TRAIN_CONFIG.get("model_key_seed", 0))
+    model = make_model(model_args, key)
 
     optim = adam(TRAIN_CONFIG["learning_rate"])
     state = optim.init(equinox.filter(model, equinox.is_inexact_array))

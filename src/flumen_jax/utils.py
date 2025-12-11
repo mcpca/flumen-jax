@@ -2,10 +2,10 @@ import datetime
 import re
 import sys
 from pathlib import Path
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 import optax
-from jax import random as jrd
+from jaxtyping import PRNGKeyArray
 
 from flumen_jax import Flumen
 
@@ -23,8 +23,8 @@ class TrainConfig(TypedDict):
     sched_eps: float
     es_patience: int
     es_atol: float
-    torch_seed: int
-    model_key_seed: int
+    torch_seed: NotRequired[int]
+    model_key_seed: NotRequired[int]
 
 
 def print_header():
@@ -79,9 +79,7 @@ def adam(learning_rate):
     return optax.adam(learning_rate)
 
 
-def make_model(args: dict[str, int], key_seed: int) -> Flumen:
-    key = jrd.key(key_seed)
-
+def make_model(args: dict[str, int], key: PRNGKeyArray) -> Flumen:
     model = Flumen(
         args["state_dim"],
         args["control_dim"],

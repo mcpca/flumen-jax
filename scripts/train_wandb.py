@@ -1,3 +1,4 @@
+import os
 import pickle
 import sys
 from argparse import ArgumentParser
@@ -6,12 +7,15 @@ from time import time
 from typing import cast
 
 import equinox
+import jax
 import torch
-import wandb
 import yaml
 from flumen import TrajectoryDataset
+from jax import random as jrd
+from jaxtyping import PRNGKeyArray
 from torch.utils.data import DataLoader
 
+import wandb
 from flumen_jax.train import (
     MetricMonitor,
     evaluate,
@@ -23,8 +27,8 @@ from flumen_jax.utils import (
     TrainConfig,
     adam,
     make_model,
-    prepare_model_saving,
     make_model_dir,
+    prepare_model_saving,
     print_header,
     print_losses,
 )
@@ -42,14 +46,43 @@ TRAIN_CONFIG: TrainConfig = {
     "sched_eps": 1e-8,
     "es_patience": 20,
     "es_atol": 5e-5,
-    "torch_seed": 3520756,
-    "model_key_seed": 345098145,
 }
 
-torch.manual_seed(seed=TRAIN_CONFIG["torch_seed"])
+DEFAULT_JAX_SEED = 0
+DEFAULT_TORCH_SEED = 3520756
+
+
+def handle_seeds() -> tuple[PRNGKeyArray, int, int | None, int]:
+    model_key_seed_str = os.environ.get("FLUMEN_JAX_SEED")
+    if not model_key_seed_str:
+        print("No model key seed found, using default", file=sys.stderr)
+        model_key_seed = DEFAULT_JAX_SEED
+    else:
+        model_key_seed = int(model_key_seed_str)
+
+    model_key = jrd.key(model_key_seed)
+
+    array_id_str = os.environ.get("SLURM_ARRAY_TASK_ID", None)
+    if array_id_str:
+        array_id = int(array_id_str)
+        if array_id > 1:
+            *_, model_key = jrd.split(model_key, array_id)
+    else:
+        array_id = None
+
+    torch_seed_str = os.environ.get("FLUMEN_TORCH_SEED")
+    if not torch_seed_str:
+        print("No PyTorch seed found, using default", file=sys.stderr)
+        torch_seed = DEFAULT_TORCH_SEED
+    else:
+        torch_seed = int(torch_seed_str)
+
+    return model_key, model_key_seed, array_id, torch_seed
 
 
 def main():
+    print("JAX device list:", jax.devices(), file=sys.stderr)
+
     ap = ArgumentParser()
     ap.add_argument("load_path", type=str, help="Path to trajectory dataset")
     ap.add_argument("name", type=str, nargs="+", help="Name of the experiment.")
@@ -66,6 +99,23 @@ def main():
 
     with data_path.open("rb") as f:
         data = pickle.load(f)
+
+    first_name, full_name, timestamp = prepare_model_saving(args.name)
+
+    run = wandb.init(
+        project="flumen-jax", config=cast(dict, TRAIN_CONFIG), name=full_name
+    )
+    model_save_dir = make_model_dir(
+        Path(args.outdir), first_name, full_name + "_" + run.id
+    )
+    model_name = f"flumen_jax-{timestamp}-{data_path.stem}-{run.id}"
+
+    model_key, model_key_seed, array_id, torch_seed = handle_seeds()
+    wandb.config["model_key_seed"] = model_key_seed
+    if array_id:
+        wandb.config["array_id"] = array_id
+
+    torch.manual_seed(torch_seed)
 
     train_data = TrajectoryDataset(data["train"])
     val_data = TrajectoryDataset(data["val"])
@@ -93,21 +143,11 @@ def main():
         "data_args": data["args"],
     }
 
-    first_name, full_name, timestamp = prepare_model_saving(args.name)
-
-    run = wandb.init(
-        project="flumen-jax", config=cast(dict, TRAIN_CONFIG), name=full_name
-    )
-    model_save_dir = make_model_dir(
-        Path(args.outdir), first_name, full_name + "_" + run.id
-    )
-    model_name = f"flumen_jax-{timestamp}-{data_path.stem}-{run.id}"
-
     # Save local copy of metadata
     with open(model_save_dir / "metadata.yaml", "w") as f:
         yaml.dump(model_metadata, f)
 
-    model = make_model(model_args, run.config["model_key_seed"])
+    model = make_model(model_args, model_key)
 
     optim = adam(run.config["learning_rate"])
     state = optim.init(equinox.filter(model, equinox.is_inexact_array))
