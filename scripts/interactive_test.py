@@ -6,7 +6,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from flumen_jax import Flumen
-from flumen.utils import get_batch_inputs
 from semble import make_trajectory_sampler, TSamplerSpec
 from semble.dynamics import ContinuousStateDynamics
 
@@ -18,6 +17,13 @@ import sys
 from pprint import pprint
 from time import time
 from typing import cast
+
+
+def get_trajectory_inputs(t, delta):
+    skips = np.floor(t / delta).astype(np.uint32)
+    tau = (t - delta * skips) / delta
+
+    return tau, skips.squeeze()
 
 
 def parse_args():
@@ -99,20 +105,11 @@ def main():
         x0, t, y, u = sampler.get_example(
             time_horizon=time_horizon, n_samples=int(1 + 3 * time_horizon)
         )
-
         time_integrate = time() - time_integrate
 
         time_predict = time()
-
-        x0_feed, u_feed, tau, lengths = get_batch_inputs(x0, t, u, delta)
-        x0_feed, u_feed, tau, lengths = (
-            x0_feed.numpy(),
-            u_feed.numpy(),
-            tau.numpy(),
-            lengths.numpy(),
-        )
-        y_pred = equinox.filter_jit(model)(x0_feed, u_feed, tau, lengths)
-
+        tau, skips = get_trajectory_inputs(t, delta)
+        y_pred = equinox.filter_jit(model.eval_trajectory)(x0, u, tau, skips)
         time_predict = time() - time_predict
 
         print(f"Timings: {time_integrate}, {time_predict}")
