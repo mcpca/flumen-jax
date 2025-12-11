@@ -1,22 +1,20 @@
-import jax
-from jax import numpy as jnp
+import sys
+from typing import Iterator, cast
 
 import equinox
+import jax
 import optax
-
-import sys
-from typing import cast, Iterator
-
+from jax import numpy as jnp
+from jaxtyping import Array, Float, UInt
 from torch.utils.data import DataLoader
 
-from .model import (
-    Flumen,
-    BatchedOutput,
-    BatchedState,
-    BatchedRNNInput,
-    BatchedTimeIncrement,
-    BatchLengths,
-)
+from .model import Flumen
+
+BatchedState = Float[Array, "batch state_dim"]
+BatchedOutput = Float[Array, "batch output_dim"]
+BatchedRNNInput = Float[Array, "batch seq_len control_dim+1"]
+BatchedTimeIncrement = Float[Array, "batch 1"]
+BatchLengths = UInt[Array, "batch 1"]
 
 Inputs = tuple[
     BatchedState, BatchedRNNInput, BatchedTimeIncrement, BatchLengths
@@ -49,7 +47,7 @@ def torch2jax(dataloader: DataLoader) -> Iterator[tuple[BatchedOutput, Inputs]]:
 @equinox.filter_jit
 def compute_loss(model: Flumen, inputs: Inputs, y: jax.Array):
     x, rnn_input, tau, batch_lens = inputs
-    y_pred = model(x, rnn_input, tau, batch_lens)
+    y_pred = jax.vmap(model)(x, rnn_input, tau, batch_lens)
     loss_val = jnp.sum(jnp.square(y - y_pred))
 
     return loss_val
