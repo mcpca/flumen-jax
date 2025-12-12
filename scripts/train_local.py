@@ -67,7 +67,9 @@ def main():
 
     bs = TRAIN_CONFIG["batch_size"]
     train_dl = NumPyLoader(train_data, batch_size=bs, shuffle=True)
-    val_dl = NumPyLoader(val_data, batch_size=bs, shuffle=False)
+    val_dl = NumPyLoader(
+        val_data, batch_size=bs, shuffle=False, skip_last=False
+    )
 
     model_args = {
         "state_dim": train_data.state_dim,
@@ -128,8 +130,9 @@ def main():
 
     train_time = time()
     for epoch in range(TRAIN_CONFIG["n_epochs"]):
+        train_loss = 0.0
         for y, inputs in train_dl:
-            flat_model, flat_state, _ = train_step(
+            flat_model, flat_state, loss = train_step(
                 flat_model,
                 model_treedef,
                 inputs,
@@ -138,8 +141,9 @@ def main():
                 flat_state,
                 state_treedef,
             )
+            train_loss += loss.item()
+        train_loss /= len(train_dl)
 
-        train_loss = evaluate(train_dl, flat_model, model_treedef)
         val_loss = evaluate(val_dl, flat_model, model_treedef)
         stop = early_stop.update(val_loss)
 
@@ -172,7 +176,9 @@ def main():
         model_save_dir / "leaves.eqx", model
     )
     test_data = NumPyDataset(TrajectoryDataset(data["test"]))
-    test_dl = NumPyLoader(test_data, batch_size=bs, shuffle=False)
+    test_dl = NumPyLoader(
+        test_data, batch_size=bs, shuffle=False, skip_last=False
+    )
     test_loss = evaluate(test_dl, *jax.tree_util.tree_flatten(model))
     print(f"Test loss: {test_loss:.5e}")
 
