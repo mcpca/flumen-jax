@@ -67,7 +67,9 @@ def main():
 
     bs = TRAIN_CONFIG["batch_size"]
     train_dl = NumPyLoader(train_data, batch_size=bs, shuffle=True)
-    val_dl = NumPyLoader(val_data, batch_size=bs, shuffle=False)
+    val_dl = NumPyLoader(
+        val_data, batch_size=bs, shuffle=False, skip_last=False
+    )
 
     model_args = {
         "state_dim": train_data.state_dim,
@@ -112,7 +114,6 @@ def main():
     )
 
     val_loss = evaluate(val_dl, model)
-    lr_monitor.update(val_loss)
     early_stop.update(val_loss)
 
     print_header()
@@ -125,16 +126,18 @@ def main():
 
     train_time = time()
     for epoch in range(TRAIN_CONFIG["n_epochs"]):
+        train_loss = 0.0
         for y, inputs in train_dl:
-            model, state, _ = train_step(
+            model, state, loss = train_step(
                 model,
                 inputs,
                 y,
                 optim,
                 state,
             )
+            train_loss += loss.item()
+        train_loss /= len(train_dl)
 
-        train_loss = evaluate(train_dl, model)
         val_loss = evaluate(val_dl, model)
         stop = early_stop.update(val_loss)
 
@@ -152,7 +155,7 @@ def main():
             print("Early stop.", file=sys.stderr)
             break
 
-        update_lr = lr_monitor.update(val_loss)
+        update_lr = lr_monitor.update(train_loss)
         if update_lr:
             reduce_learning_rate(
                 state,
@@ -163,7 +166,9 @@ def main():
     print(f"Training took {train_time} sec.")
 
     test_data = NumPyDataset(TrajectoryDataset(data["test"]))
-    test_dl = NumPyLoader(test_data, batch_size=bs, shuffle=False)
+    test_dl = NumPyLoader(
+        test_data, batch_size=bs, shuffle=False, skip_last=False
+    )
     test_loss = evaluate(test_dl, model)
     print(f"Test loss: {test_loss:.5e}")
 
