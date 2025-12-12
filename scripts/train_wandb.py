@@ -8,12 +8,14 @@ from typing import cast
 
 import equinox
 import jax
+import numpy as np
 import yaml
 from flumen import TrajectoryDataset
 from jax import random as jrd
 from jaxtyping import PRNGKeyArray
 
 import wandb
+from flumen_jax.dataloader import NumPyDataset, NumPyLoader
 from flumen_jax.train import (
     MetricMonitor,
     evaluate,
@@ -29,7 +31,6 @@ from flumen_jax.utils import (
     print_header,
     print_losses,
 )
-from flumen_jax.dataloader import NumPyLoader, NumPyDataset
 
 TRAIN_CONFIG: TrainConfig = {
     "batch_size": 128,
@@ -47,10 +48,10 @@ TRAIN_CONFIG: TrainConfig = {
 }
 
 DEFAULT_JAX_SEED = 0
-DEFAULT_TORCH_KEY_SEED = 3520756
+DEFAULT_NUMPY_KEY_SEED = 3520756
 
 
-def handle_seeds() -> tuple[PRNGKeyArray, int, int | None, int]:
+def handle_seeds() -> tuple[PRNGKeyArray, int, int, int, int | None]:
     model_key_seed_str = os.environ.get("FLUMEN_JAX_SEED")
     if not model_key_seed_str:
         print("No model key seed found, using default", file=sys.stderr)
@@ -68,21 +69,23 @@ def handle_seeds() -> tuple[PRNGKeyArray, int, int | None, int]:
     else:
         array_id = None
 
-    torch_seed_str = os.environ.get("FLUMEN_TORCH_KEY_SEED")
-    if not torch_seed_str:
-        print("No PyTorch key seed found, using default", file=sys.stderr)
-        torch_key_seed = DEFAULT_TORCH_KEY_SEED
+    numpy_seed_str = os.environ.get("FLUMEN_NUMPY_KEY_SEED")
+    if not numpy_seed_str:
+        print("No NumPy key seed found, using default", file=sys.stderr)
+        numpy_key_seed = DEFAULT_NUMPY_KEY_SEED
     else:
-        torch_key_seed = int(torch_seed_str)
+        numpy_key_seed = int(numpy_seed_str)
 
-    torch_key = jrd.key(torch_key_seed)
+    numpy_key = jrd.key(numpy_key_seed)
 
     if array_id and array_id > 1:
-        *_, torch_key = jrd.split(torch_key, array_id)
+        *_, numpy_key = jrd.split(numpy_key, array_id)
 
-    torch_seed = jrd.randint(torch_key, (1,), minval=0, maxval=32768).item()
+    numpy_seed = int(
+        jrd.randint(numpy_key, (1,), minval=0, maxval=32768).item()
+    )
 
-    return model_key, model_key_seed, array_id, torch_seed
+    return model_key, model_key_seed, numpy_key_seed, numpy_seed, array_id
 
 
 def main():
@@ -115,10 +118,16 @@ def main():
     )
     model_name = f"flumen_jax-{timestamp}-{data_path.stem}-{run.id}"
 
-    model_key, model_key_seed, array_id, _ = handle_seeds()
+    model_key, model_key_seed, numpy_key_seed, numpy_seed, array_id = (
+        handle_seeds()
+    )
     wandb.config["model_key_seed"] = model_key_seed
+    wandb.config["numpy_key_seed"] = numpy_key_seed
+    wandb.config["numpy_seed"] = numpy_key_seed
     if array_id:
         wandb.config["array_id"] = array_id
+
+    np.random.seed(numpy_seed)
 
     train_data = NumPyDataset(TrajectoryDataset(data["train"]))
     val_data = NumPyDataset(TrajectoryDataset(data["val"]))
