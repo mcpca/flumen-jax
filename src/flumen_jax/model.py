@@ -5,11 +5,7 @@ from jax import numpy as jnp
 from jax import random as jrd
 from jaxtyping import Array, Float, PRNGKeyArray, UInt
 
-State = Float[Array, "state_dim"]
-Output = Float[Array, "output_dim"]
-Input = Float[Array, "seq_len control_dim"]
-RNNInput = Float[Array, "seq_len control_dim+1"]
-TimeIncrement = Float[Array, "1"]
+from .typing import Output, State, RNNInput, Input, TimeIncrement
 
 
 class Flumen(equinox.Module):
@@ -39,7 +35,9 @@ class Flumen(equinox.Module):
         )
 
         self.cell = LSTMCell(
-            input_size=control_dim + 1, hidden_size=feature_dim, key=lstm_key
+            input_size=control_dim + 1,
+            hidden_size=feature_dim,
+            key=lstm_key,
         )
 
         self.decoder = MLP(
