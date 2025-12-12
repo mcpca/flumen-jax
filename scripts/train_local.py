@@ -11,11 +11,11 @@ import yaml
 from flumen import TrajectoryDataset
 from jax import random as jrd
 
+from flumen_jax.dataloader import NumPyDataset, NumPyLoader
 from flumen_jax.train import (
     MetricMonitor,
     evaluate,
     reduce_learning_rate,
-    torch2jax,
     train_step,
 )
 from flumen_jax.utils import (
@@ -27,7 +27,6 @@ from flumen_jax.utils import (
     print_header,
     print_losses,
 )
-from flumen_jax.dataloader import NumPyLoader, NumPyDataset
 
 TRAIN_CONFIG: TrainConfig = {
     "batch_size": 128,
@@ -65,12 +64,10 @@ def main():
 
     train_data = NumPyDataset(TrajectoryDataset(data["train"]))
     val_data = NumPyDataset(TrajectoryDataset(data["val"]))
-    test_data = NumPyDataset(TrajectoryDataset(data["test"]))
 
     bs = TRAIN_CONFIG["batch_size"]
     train_dl = NumPyLoader(train_data, batch_size=bs, shuffle=True)
     val_dl = NumPyLoader(val_data, batch_size=bs, shuffle=False)
-    test_dl = NumPyLoader(test_data, batch_size=bs, shuffle=False)
 
     model_args = {
         "state_dim": train_data.state_dim,
@@ -123,7 +120,6 @@ def main():
         0,
         evaluate(train_dl, model),
         val_loss,
-        evaluate(test_dl, model),
         early_stop.best_metric,
     )
 
@@ -146,7 +142,6 @@ def main():
             epoch + 1,
             train_loss,
             val_loss,
-            evaluate(test_dl, model),
             early_stop.best_metric,
         )
 
@@ -166,6 +161,11 @@ def main():
             )
     train_time = int(time() - train_time)
     print(f"Training took {train_time} sec.")
+
+    test_data = NumPyDataset(TrajectoryDataset(data["test"]))
+    test_dl = NumPyLoader(test_data, batch_size=bs, shuffle=False)
+    test_loss = evaluate(test_dl, model)
+    print(f"Test loss: {test_loss:.5e}")
 
 
 if __name__ == "__main__":

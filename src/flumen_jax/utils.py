@@ -30,7 +30,7 @@ class TrainConfig(TypedDict):
 def print_header():
     header_msg = (
         f"{'Epoch':>5} :: {'Loss (Train)':>16} :: "
-        f"{'Loss (Val)':>16} :: {'Loss (Test)':>16} :: {'Best (Val)':>16}"
+        f"{'Loss (Val)':>16} :: {'Best (Val)':>16}"
     )
 
     print(header_msg)
@@ -41,12 +41,11 @@ def print_losses(
     epoch: int,
     train: float,
     val: float,
-    test: float,
     best_val_yet: float,
 ):
     print(
         f"{epoch + 1:>5d} :: {train:>16.5e} :: {val:>16.5e} :: "
-        f"{test:>16.5e} :: {best_val_yet:>16.5e}"
+        f"{best_val_yet:>16.5e}"
     )
 
 

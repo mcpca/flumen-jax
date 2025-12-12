@@ -131,12 +131,10 @@ def main():
 
     train_data = NumPyDataset(TrajectoryDataset(data["train"]))
     val_data = NumPyDataset(TrajectoryDataset(data["val"]))
-    test_data = NumPyDataset(TrajectoryDataset(data["test"]))
 
     bs = TRAIN_CONFIG["batch_size"]
     train_dl = NumPyLoader(train_data, batch_size=bs, shuffle=True)
     val_dl = NumPyLoader(val_data, batch_size=bs, shuffle=False)
-    test_dl = NumPyLoader(test_data, batch_size=bs, shuffle=False)
 
     model_args = {
         "state_dim": train_data.state_dim,
@@ -176,16 +174,17 @@ def main():
         rtol=0.0,
     )
 
+    train_loss = evaluate(train_dl, model)
     val_loss = evaluate(val_dl, model)
+
     lr_monitor.update(val_loss)
     early_stop.update(val_loss)
 
     print_header()
     print_losses(
         0,
-        evaluate(train_dl, model),
+        train_loss,
         val_loss,
-        evaluate(test_dl, model),
         early_stop.best_metric,
     )
 
@@ -203,14 +202,12 @@ def main():
 
         train_loss = evaluate(train_dl, model)
         val_loss = evaluate(val_dl, model)
-        test_loss = evaluate(test_dl, model)
         stop = early_stop.update(val_loss)
 
         print_losses(
             epoch + 1,
             train_loss,
             val_loss,
-            test_loss,
             early_stop.best_metric,
         )
 
@@ -223,7 +220,6 @@ def main():
 
             run.summary["best_train"] = train_loss
             run.summary["best_val"] = val_loss
-            run.summary["best_test"] = test_loss
             run.summary["best_epoch"] = epoch + 1
 
         wandb.log(
@@ -233,7 +229,6 @@ def main():
                 "lr": state.hyperparams["learning_rate"],  # type: ignore
                 "train_loss": train_loss,
                 "val_loss": val_loss,
-                "test_loss": test_loss,
             }
         )
 
@@ -250,10 +245,22 @@ def main():
             )
 
     train_time = int(time() - train_time)
+    run.summary["train_time"] = train_time
     print(f"Training took {train_time} sec.")
 
     # Log best model
     run.log_model(model_save_dir.as_posix(), name=model_name, aliases=["best"])
+
+    # Load best model and compute test loss
+    model = equinox.tree_deserialise_leaves(
+        model_save_dir / "leaves.eqx", model
+    )
+
+    test_data = NumPyDataset(TrajectoryDataset(data["test"]))
+    test_dl = NumPyLoader(test_data, batch_size=bs, shuffle=False)
+    test_loss = evaluate(test_dl, model)
+    run.summary["best_test"] = test_loss
+    print(f"Test loss: {test_loss:.5e}")
 
 
 if __name__ == "__main__":
