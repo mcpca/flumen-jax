@@ -26,6 +26,7 @@ from flumen_jax.utils import (
     prepare_model_saving,
     print_header,
     print_losses,
+    init_last_layer_bias,
 )
 
 TRAIN_CONFIG: TrainConfig = {
@@ -41,6 +42,7 @@ TRAIN_CONFIG: TrainConfig = {
     "sched_eps": 1e-8,
     "es_patience": 20,
     "es_atol": 5e-5,
+    "init_last_layer_bias": True,
     "numpy_seed": 3520756,
     "model_key_seed": 345098145,
 }
@@ -97,6 +99,16 @@ def main():
 
     key = jrd.key(TRAIN_CONFIG.get("model_key_seed", 0))
     model = make_model(model_args, key)
+
+    y_train_var = np.var(train_data.y, axis=0)
+    print(
+        f"Trace of output variance in training data: {np.sum(y_train_var):.2f}",
+        file=sys.stderr,
+    )
+
+    if TRAIN_CONFIG["init_last_layer_bias"]:
+        y_train_mean = np.mean(train_data.y, axis=0)
+        model = init_last_layer_bias(model, y_train_mean, sum=True)
 
     optim = adam(TRAIN_CONFIG["learning_rate"])
     state = optim.init(equinox.filter(model, equinox.is_inexact_array))

@@ -25,6 +25,7 @@ from flumen_jax.train import (
 from flumen_jax.utils import (
     TrainConfig,
     adam,
+    init_last_layer_bias,
     make_model,
     make_model_dir,
     prepare_model_saving,
@@ -43,6 +44,7 @@ TRAIN_CONFIG: TrainConfig = {
     "sched_patience": 10,
     "sched_rtol": 1e-4,
     "sched_eps": 1e-8,
+    "init_last_layer_bias": True,
     "es_patience": 20,
     "es_atol": 5e-5,
 }
@@ -175,6 +177,16 @@ def main():
         atol=run.config["es_atol"],
         rtol=0.0,
     )
+
+    y_train_var = np.var(train_data.y, axis=0)
+    print(
+        f"Trace of output variance in training data: {np.sum(y_train_var):.2f}",
+        file=sys.stderr,
+    )
+
+    if run.config["init_last_layer_bias"]:
+        y_train_mean = np.mean(train_data.y, axis=0)
+        model = init_last_layer_bias(model, y_train_mean, sum=True)
 
     flat_model, model_treedef = jax.tree_util.tree_flatten(model)
     flat_state, state_treedef = jax.tree_util.tree_flatten(state)

@@ -4,10 +4,12 @@ import sys
 from pathlib import Path
 from typing import NotRequired, TypedDict
 
+import equinox
 import optax
 from jaxtyping import PRNGKeyArray
 
 from flumen_jax import Flumen
+from flumen_jax.typing import Output
 
 
 class TrainConfig(TypedDict):
@@ -23,6 +25,7 @@ class TrainConfig(TypedDict):
     sched_eps: float
     es_patience: int
     es_atol: float
+    init_last_layer_bias: bool
     numpy_seed: NotRequired[int]
     model_key_seed: NotRequired[int]
 
@@ -89,4 +92,11 @@ def make_model(args: dict[str, int], key: PRNGKeyArray) -> Flumen:
         key=key,
     )
 
+    return model
+
+
+def init_last_layer_bias(model: Flumen, val: Output, sum=True) -> Flumen:
+    if sum:
+        val = val + model.decoder.layers[-1].bias
+    model = equinox.tree_at(lambda m: m.decoder.layers[-1].bias, model, val)
     return model
