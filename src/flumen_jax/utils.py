@@ -47,7 +47,7 @@ def print_losses(
     best_val_yet: float,
 ):
     print(
-        f"{epoch + 1:>5d} :: {train:>16.5e} :: {val:>16.5e} :: "
+        f"{epoch:>5d} :: {train:>16.5e} :: {val:>16.5e} :: "
         f"{best_val_yet:>16.5e}"
     )
 
