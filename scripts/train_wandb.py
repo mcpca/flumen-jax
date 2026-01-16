@@ -33,22 +33,6 @@ from flumen_jax.utils import (
     print_losses,
 )
 
-TRAIN_CONFIG: TrainConfig = {
-    "batch_size": 128,
-    "feature_dim": 24,
-    "encoder_hsz": 128,
-    "decoder_hsz": 128,
-    "learning_rate": 1e-3,
-    "n_epochs": 500,
-    "sched_factor": 2,
-    "sched_patience": 10,
-    "sched_rtol": 1e-4,
-    "sched_eps": 1e-8,
-    "init_last_layer_bias": True,
-    "es_patience": 20,
-    "es_atol": 5e-5,
-}
-
 DEFAULT_JAX_SEED = 0
 DEFAULT_NUMPY_KEY_SEED = 3520756
 
@@ -94,7 +78,12 @@ def main():
     print("JAX device list:", jax.devices(), file=sys.stderr)
 
     ap = ArgumentParser()
-    ap.add_argument("load_path", type=str, help="Path to trajectory dataset")
+    ap.add_argument(
+        "load_path", type=str, help="Path to .pkl trajectory dataset"
+    )
+    ap.add_argument(
+        "config_path", type=str, help="Path to YAML train configuration"
+    )
     ap.add_argument("name", type=str, nargs="+", help="Name of the experiment.")
     ap.add_argument(
         "--model_log_rate",
@@ -112,8 +101,11 @@ def main():
 
     first_name, full_name, timestamp = prepare_model_saving(args.name)
 
+    with open(args.config_path, "r") as f:
+        config: TrainConfig = yaml.load(f, Loader=yaml.FullLoader)
+
     run = wandb.init(
-        project="flumen-jax", config=cast(dict, TRAIN_CONFIG), name=full_name
+        project="flumen-jax", config=cast(dict, config), name=full_name
     )
     model_save_dir = make_model_dir(
         Path(args.outdir), first_name, full_name + "_" + run.id
@@ -123,18 +115,18 @@ def main():
     model_key, model_key_seed, numpy_key_seed, numpy_seed, array_id = (
         handle_seeds()
     )
-    wandb.config["model_key_seed"] = model_key_seed
-    wandb.config["numpy_key_seed"] = numpy_key_seed
-    wandb.config["numpy_seed"] = numpy_key_seed
+    run.config["model_key_seed"] = model_key_seed
+    run.config["numpy_key_seed"] = numpy_key_seed
+    run.config["numpy_seed"] = numpy_key_seed
     if array_id:
-        wandb.config["array_id"] = array_id
+        run.config["array_id"] = array_id
 
     np.random.seed(numpy_seed)
 
     train_data = NumPyDataset(TrajectoryDataset(data["train"]))
     val_data = NumPyDataset(TrajectoryDataset(data["val"]))
 
-    bs = TRAIN_CONFIG["batch_size"]
+    bs = run.config["batch_size"]
     train_dl = NumPyLoader(train_data, batch_size=bs, shuffle=True)
     val_dl = NumPyLoader(
         val_data, batch_size=bs, shuffle=False, skip_last=False
@@ -144,9 +136,9 @@ def main():
         "state_dim": train_data.state_dim,
         "control_dim": train_data.control_dim,
         "output_dim": train_data.output_dim,
-        "feature_dim": TRAIN_CONFIG["feature_dim"],
-        "encoder_hsz": TRAIN_CONFIG["encoder_hsz"],
-        "decoder_hsz": TRAIN_CONFIG["decoder_hsz"],
+        "feature_dim": run.config["feature_dim"],
+        "encoder_hsz": run.config["encoder_hsz"],
+        "decoder_hsz": run.config["decoder_hsz"],
     }
 
     model_metadata = {
