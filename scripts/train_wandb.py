@@ -50,8 +50,7 @@ def handle_seeds() -> tuple[PRNGKeyArray, int, int, int, int | None]:
     array_id_str = os.environ.get("SLURM_ARRAY_TASK_ID", None)
     if array_id_str:
         array_id = int(array_id_str)
-        if array_id > 1:
-            *_, model_key = jrd.split(model_key, array_id)
+        model_key = jrd.fold_in(model_key, array_id)
     else:
         array_id = None
 
@@ -64,8 +63,8 @@ def handle_seeds() -> tuple[PRNGKeyArray, int, int, int, int | None]:
 
     numpy_key = jrd.key(numpy_key_seed)
 
-    if array_id and array_id > 1:
-        *_, numpy_key = jrd.split(numpy_key, array_id)
+    if array_id:
+        numpy_key = jrd.fold_in(numpy_key, array_id)
 
     numpy_seed = int(
         jrd.randint(numpy_key, (1,), minval=0, maxval=32768).item()
