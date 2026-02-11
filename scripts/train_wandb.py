@@ -138,7 +138,9 @@ def main():
         "output_dim": train_data.output_dim,
         "feature_dim": run.config["feature_dim"],
         "encoder_hsz": run.config["encoder_hsz"],
+        "encoder_depth": run.config["encoder_depth"],
         "decoder_hsz": run.config["decoder_hsz"],
+        "decoder_depth": run.config["decoder_depth"],
     }
 
     model_metadata = {

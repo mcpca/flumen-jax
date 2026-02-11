@@ -16,7 +16,9 @@ class TrainConfig(TypedDict):
     batch_size: int
     feature_dim: int
     encoder_hsz: int
+    encoder_depth: int
     decoder_hsz: int
+    decoder_depth: int
     learning_rate: float
     n_epochs: int
     sched_factor: int
@@ -82,16 +84,7 @@ def adam(learning_rate):
 
 
 def make_model(args: dict[str, int], key: PRNGKeyArray) -> Flumen:
-    model = Flumen(
-        args["state_dim"],
-        args["control_dim"],
-        args["output_dim"],
-        args["feature_dim"],
-        args["encoder_hsz"],
-        args["decoder_hsz"],
-        key=key,
-    )
-
+    model = Flumen(**args, key=key)
     return model
 
 
